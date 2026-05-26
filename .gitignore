@@ -1,0 +1,13 @@
+# Virtual environment
+mini_llm/
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local weights or large checkpoints (optional, but let's allow mini_llm_weights.pt since it was in the repo)
+# If they want mini_llm_weights.pt to be pushed, we don't ignore it.

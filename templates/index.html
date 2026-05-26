@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Mini LLM — From Scratch</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#0a0a0f;--surface:#13131a;--card:#1a1a26;--border:#2a2a3d;
+  --accent:#7c5cfc;--accent2:#5c8afc;--green:#22d3a5;--red:#fc5c7d;
+  --yellow:#fbbf24;--text:#e8e8f0;--muted:#6b6b8a;--font:'Inter',sans-serif;--mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;overflow-x:hidden}
+
+/* ── HEADER ── */
+header{background:linear-gradient(135deg,#1a0a3a 0%,#0a1a3a 100%);border-bottom:1px solid var(--border);padding:18px 32px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100;backdrop-filter:blur(20px)}
+.logo{width:40px;height:40px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:12px;display:grid;place-items:center;font-size:20px;flex-shrink:0}
+header h1{font-size:1.35rem;font-weight:700;background:linear-gradient(135deg,#c4b5fd,#93c5fd);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+header p{font-size:.78rem;color:var(--muted);margin-top:2px}
+.status-pill{margin-left:auto;padding:6px 14px;border-radius:20px;font-size:.75rem;font-weight:600;border:1px solid var(--border);background:var(--surface);display:flex;align-items:center;gap:6px;transition:.3s}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0;transition:.3s}
+.dot.training{background:var(--yellow);animation:pulse 1s infinite}
+.dot.done{background:var(--green)}
+.dot.error{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── LAYOUT ── */
+main{display:grid;grid-template-columns:340px 1fr;gap:20px;padding:24px 32px;max-width:1400px;margin:0 auto}
+@media(max-width:900px){main{grid-template-columns:1fr;padding:16px}}
+
+/* ── CARDS ── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:22px;transition:border-color .3s}
+.card:hover{border-color:#3a3a5a}
+.card-title{font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.card-title span{font-size:14px}
+
+/* ── FORM CONTROLS ── */
+label{display:block;font-size:.78rem;color:var(--muted);margin-bottom:4px;margin-top:14px}
+label:first-of-type{margin-top:0}
+input[type=number],input[type=range],select{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font);font-size:.85rem;padding:8px 12px;outline:none;transition:.2s}
+input[type=number]:focus,select:focus{border-color:var(--accent)}
+input[type=range]{padding:4px 0;accent-color:var(--accent);cursor:pointer}
+.range-row{display:flex;align-items:center;gap:8px}
+.range-val{font-size:.8rem;color:var(--accent);font-weight:600;min-width:40px;text-align:right;font-family:var(--mono)}
+textarea{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:.82rem;padding:10px 12px;outline:none;resize:vertical;min-height:80px;transition:.2s}
+textarea:focus{border-color:var(--accent)}
+
+/* ── BUTTONS ── */
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:11px;border-radius:10px;border:none;font-family:var(--font);font-size:.88rem;font-weight:600;cursor:pointer;transition:.2s;margin-top:12px}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+.btn-primary:hover{opacity:.9;box-shadow:0 4px 20px rgba(124,92,252,.4)}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-danger{background:rgba(252,92,125,.15);color:var(--red);border:1px solid rgba(252,92,125,.3)}
+.btn-danger:hover{background:rgba(252,92,125,.25)}
+.btn-green{background:rgba(34,211,165,.15);color:var(--green);border:1px solid rgba(34,211,165,.3)}
+.btn-green:hover{background:rgba(34,211,165,.25)}
+
+/* ── STAT BARS ── */
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.stat{background:var(--surface);border-radius:10px;padding:12px;border:1px solid var(--border)}
+.stat-label{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.stat-val{font-size:1.1rem;font-weight:700;font-family:var(--mono);color:var(--text);margin-top:2px}
+.stat-val.green{color:var(--green)}
+.stat-val.purple{color:var(--accent)}
+
+/* ── PROGRESS ── */
+.progress-wrap{margin-top:16px}
+.progress-label{display:flex;justify-content:space-between;font-size:.75rem;color:var(--muted);margin-bottom:6px}
+.progress-bar{height:6px;background:var(--surface);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:3px;transition:width .5s ease;width:0%}
+
+/* ── CHART ── */
+.chart-wrap{position:relative;height:260px;margin-top:12px}
+
+/* ── LOG ── */
+.log-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;font-family:var(--mono);font-size:.75rem;color:var(--muted);max-height:130px;overflow-y:auto;margin-top:12px;line-height:1.6}
+.log-box .entry{color:var(--text);border-bottom:1px solid var(--border);padding:3px 0}
+.log-box .entry:last-child{border:none;color:var(--green)}
+
+/* ── OUTPUT ── */
+.output-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;font-family:var(--mono);font-size:.82rem;line-height:1.8;color:var(--text);min-height:140px;white-space:pre-wrap;word-break:break-word;position:relative;overflow-y:auto;max-height:400px;margin-top:12px}
+.output-box .prompt-part{color:var(--accent2)}
+.output-box .gen-part{color:var(--text)}
+.placeholder{color:var(--muted);font-style:italic}
+.copy-btn{position:absolute;top:10px;right:10px;background:var(--card);border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:4px 10px;font-size:.72rem;cursor:pointer;transition:.2s}
+.copy-btn:hover{color:var(--text);border-color:var(--accent)}
+
+/* ── RIGHT COLUMN ── */
+.right-col{display:flex;flex-direction:column;gap:20px}
+.gen-options{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+@media(max-width:600px){.gen-options{grid-template-columns:1fr 1fr}}
+
+/* ── SPINNER ── */
+.spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── TOAST ── */
+#toast{position:fixed;bottom:24px;right:24px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 18px;font-size:.82rem;transform:translateY(80px);opacity:0;transition:.3s;z-index:999}
+#toast.show{transform:translateY(0);opacity:1}
+#toast.ok{border-color:var(--green);color:var(--green)}
+#toast.err{border-color:var(--red);color:var(--red)}
+
+/* ── TABS ── */
+.tabs{display:flex;gap:4px;margin-bottom:16px}
+.tab{padding:7px 16px;border-radius:8px;font-size:.8rem;font-weight:600;cursor:pointer;border:1px solid transparent;color:var(--muted);transition:.2s}
+.tab.active{background:rgba(124,92,252,.2);border-color:var(--accent);color:var(--accent)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🧠</div>
+  <div>
+    <h1>Mini LLM — From Scratch</h1>
+    <p>Character-level Transformer · PyTorch · Author: Adarsh Dwivedi</p>
+  </div>
+  <div class="status-pill" id="statusPill">
+    <div class="dot" id="statusDot"></div>
+    <span id="statusText">Idle</span>
+  </div>
+</header>
+
+<main>
+  <!-- ── LEFT: CONFIG + PROGRESS ── -->
+  <div style="display:flex;flex-direction:column;gap:20px">
+
+    <!-- Hyperparams -->
+    <div class="card">
+      <div class="card-title"><span>⚙️</span> Hyperparameters</div>
+
+      <label>Training Steps</label>
+      <div class="range-row">
+        <input type="range" id="maxIters" min="500" max="10000" step="500" value="3000" oninput="syncRange(this,'maxItersVal')"/>
+        <span class="range-val" id="maxItersVal">3000</span>
+      </div>
+
+      <label>Batch Size</label>
+      <div class="range-row">
+        <input type="range" id="batchSize" min="8" max="128" step="8" value="32" oninput="syncRange(this,'batchSizeVal')"/>
+        <span class="range-val" id="batchSizeVal">32</span>
+      </div>
+
+      <label>Context Length (block_size)</label>
+      <div class="range-row">
+        <input type="range" id="blockSize" min="16" max="128" step="16" value="64" oninput="syncRange(this,'blockSizeVal')"/>
+        <span class="range-val" id="blockSizeVal">64</span>
+      </div>
+
+      <label>Embedding Dim</label>
+      <div class="range-row">
+        <input type="range" id="embedDim" min="32" max="256" step="32" value="128" oninput="syncRange(this,'embedDimVal')"/>
+        <span class="range-val" id="embedDimVal">128</span>
+      </div>
+
+      <label>Learning Rate</label>
+      <select id="lr">
+        <option value="0.001">1e-3</option>
+        <option value="0.0003" selected>3e-4 (recommended)</option>
+        <option value="0.0001">1e-4</option>
+      </select>
+
+      <label>Dataset Rows (subset size)</label>
+      <div class="range-row">
+        <input type="range" id="subsetRows" min="200" max="5000" step="200" value="1000" oninput="syncRange(this,'subsetRowsVal')"/>
+        <span class="range-val" id="subsetRowsVal">1000</span>
+      </div>
+
+      <button class="btn btn-primary" id="trainBtn" onclick="startTraining()">
+        <span>🚀</span> Start Training
+      </button>
+      <button class="btn btn-danger" id="stopBtn" onclick="stopTraining()" style="display:none">
+        <span>⛔</span> Stop Training
+      </button>
+    </div>
+
+    <!-- Stats -->
+    <div class="card">
+      <div class="card-title"><span>📊</span> Live Metrics</div>
+      <div class="progress-wrap">
+        <div class="progress-label"><span>Progress</span><span id="progText">0 / 0</span></div>
+        <div class="progress-bar"><div class="progress-fill" id="progFill"></div></div>
+      </div>
+      <div class="stats-grid">
+        <div class="stat"><div class="stat-label">Train Loss</div><div class="stat-val purple" id="trainLossVal">—</div></div>
+        <div class="stat"><div class="stat-label">Val Loss</div><div class="stat-val green" id="valLossVal">—</div></div>
+        <div class="stat"><div class="stat-label">Parameters</div><div class="stat-val" id="paramsVal">—</div></div>
+        <div class="stat"><div class="stat-label">Device</div><div class="stat-val" id="deviceVal">—</div></div>
+      </div>
+      <div class="log-box" id="logBox"><span class="placeholder">Training log will appear here…</span></div>
+      <button class="btn btn-green" onclick="saveModel()" id="saveBtn" disabled>
+        <span>💾</span> Save Weights
+      </button>
+    </div>
+  </div>
+
+  <!-- ── RIGHT: CHART + GENERATE ── -->
+  <div class="right-col">
+
+    <!-- Loss chart -->
+    <div class="card">
+      <div class="card-title"><span>📈</span> Training Loss Curve</div>
+      <div class="chart-wrap">
+        <canvas id="lossChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Generate -->
+    <div class="card">
+      <div class="card-title"><span>✨</span> Text Generation</div>
+
+      <label>Prompt (leave empty to generate freely)</label>
+      <textarea id="prompt" placeholder="e.g.  The history of artificial intelligence…" rows="3"></textarea>
+
+      <div class="gen-options">
+        <div>
+          <label>Tokens to generate</label>
+          <input type="number" id="genTokens" value="200" min="20" max="1000"/>
+        </div>
+        <div>
+          <label>Temperature</label>
+          <div class="range-row">
+            <input type="range" id="genTemp" min="0.1" max="2.0" step="0.1" value="0.8" oninput="syncRange(this,'genTempVal')"/>
+            <span class="range-val" id="genTempVal">0.8</span>
+          </div>
+        </div>
+        <div>
+          <label>Top-K</label>
+          <input type="number" id="genTopK" value="40" min="1" max="200"/>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="genBtn" onclick="generateText()" disabled>
+        <span>⚡</span> Generate Text
+      </button>
+
+      <div style="position:relative">
+        <div class="output-box" id="outputBox">
+          <span class="placeholder">Train the model first, then generate text here.</span>
+        </div>
+        <button class="copy-btn" onclick="copyOutput()">Copy</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+// ── CHART SETUP ──
+const ctx = document.getElementById('lossChart').getContext('2d');
+const lossChart = new Chart(ctx,{
+  type:'line',
+  data:{
+    labels:[],
+    datasets:[
+      {label:'Train Loss',data:[],borderColor:'#7c5cfc',backgroundColor:'rgba(124,92,252,.08)',borderWidth:2,pointRadius:0,tension:.4,fill:true},
+      {label:'Val Loss',  data:[],borderColor:'#22d3a5',backgroundColor:'rgba(34,211,165,.06)',borderWidth:2,pointRadius:0,tension:.4,fill:true}
+    ]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    animation:{duration:0},
+    plugins:{legend:{labels:{color:'#e8e8f0',font:{family:'Inter',size:11}}}},
+    scales:{
+      x:{ticks:{color:'#6b6b8a',font:{size:10},maxTicksLimit:8},grid:{color:'rgba(255,255,255,.04)'}},
+      y:{ticks:{color:'#6b6b8a',font:{size:10}},grid:{color:'rgba(255,255,255,.04)'}}
+    }
+  }
+});
+
+// ── RANGE SYNC ──
+function syncRange(el, valId){
+  document.getElementById(valId).textContent = el.value;
+}
+
+// ── STATUS ──
+function setStatus(s){
+  const dot=document.getElementById('statusDot');
+  const txt=document.getElementById('statusText');
+  dot.className='dot '+s;
+  const labels={idle:'Idle',loading:'Loading…',training:'Training',done:'Done ✓',error:'Error'};
+  txt.textContent=labels[s]||s;
+}
+
+// ── TOAST ──
+function toast(msg,type='ok'){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='show '+type;
+  setTimeout(()=>t.className='',3000);
+}
+
+// ── LOG ──
+const logLines=[];
+function addLog(msg){
+  logLines.push(msg);
+  if(logLines.length>50)logLines.shift();
+  const box=document.getElementById('logBox');
+  box.innerHTML=logLines.map((l,i)=>`<div class="entry">${l}</div>`).join('');
+  box.scrollTop=box.scrollHeight;
+}
+
+// ── SSE STREAM ──
+let evtSource=null;
+function startStream(){
+  if(evtSource){evtSource.close()}
+  evtSource=new EventSource('/api/stream');
+  evtSource.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    if(d._close){evtSource.close();return}
+    updateUI(d);
+  };
+}
+
+function updateUI(d){
+  setStatus(d.status);
+  const pct=d.max_iters>0?Math.round(d.step/d.max_iters*100):0;
+  document.getElementById('progFill').style.width=pct+'%';
+  document.getElementById('progText').textContent=`${d.step} / ${d.max_iters}`;
+  if(d.train_loss.length){
+    const last=d.train_loss.length-1;
+    document.getElementById('trainLossVal').textContent=d.train_loss[last].toFixed(4);
+    document.getElementById('valLossVal').textContent=d.val_loss[last].toFixed(4);
+    lossChart.data.labels=d.steps;
+    lossChart.data.datasets[0].data=d.train_loss;
+    lossChart.data.datasets[1].data=d.val_loss;
+    lossChart.update('none');
+  }
+  if(d.params) document.getElementById('paramsVal').textContent=Number(d.params).toLocaleString();
+  if(d.device)  document.getElementById('deviceVal').textContent=d.device.toUpperCase();
+  if(d.message) addLog(d.message);
+
+  const isDone=d.status==='done';
+  const isTraining=d.status==='training'||d.status==='loading';
+  document.getElementById('trainBtn').disabled=isTraining;
+  document.getElementById('genBtn').disabled=!isDone;
+  document.getElementById('saveBtn').disabled=!isDone;
+  document.getElementById('stopBtn').style.display=isTraining?'flex':'none';
+}
+
+// ── TRAIN ──
+async function startTraining(){
+  const hp={
+    max_iters : +document.getElementById('maxIters').value,
+    batch_size: +document.getElementById('batchSize').value,
+    block_size: +document.getElementById('blockSize').value,
+    embed_dim : +document.getElementById('embedDim').value,
+    lr        : +document.getElementById('lr').value,
+    subset_rows:+document.getElementById('subsetRows').value,
+  };
+  lossChart.data.labels=[];
+  lossChart.data.datasets.forEach(ds=>ds.data=[]);
+  lossChart.update();
+  document.getElementById('logBox').innerHTML='<span class="placeholder">Starting…</span>';
+  const r=await fetch('/api/train',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(hp)});
+  const j=await r.json();
+  if(j.ok){startStream();toast('Training started 🚀')}
+  else toast(j.msg,'err');
+}
+
+// ── STOP ──
+async function stopTraining(){
+  await fetch('/api/stop',{method:'POST'});
+  toast('Stop signal sent','err');
+}
+
+// ── SAVE ──
+async function saveModel(){
+  const r=await fetch('/api/save',{method:'POST'});
+  const j=await r.json();
+  toast(j.ok?'Weights saved! 💾':j.msg, j.ok?'ok':'err');
+}
+
+// ── GENERATE ──
+async function generateText(){
+  const btn=document.getElementById('genBtn');
+  const box=document.getElementById('outputBox');
+  btn.disabled=true;
+  btn.innerHTML='<div class="spinner"></div> Generating…';
+  box.innerHTML='<span class="placeholder">Generating…</span>';
+
+  const body={
+    prompt     : document.getElementById('prompt').value,
+    tokens     : +document.getElementById('genTokens').value,
+    temperature: +document.getElementById('genTemp').value,
+    top_k      : +document.getElementById('genTopK').value,
+  };
+  try{
+    const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json();
+    if(j.ok){
+      const prompt=body.prompt;
+      const generated=j.text.slice(prompt.length);
+      box.innerHTML=
+        `<span class="prompt-part">${escHtml(prompt)}</span>`+
+        `<span class="gen-part">${escHtml(generated)}</span>`;
+      toast('Generated! ✨');
+    } else {
+      box.innerHTML=`<span style="color:var(--red)">${j.msg}</span>`;
+      toast(j.msg,'err');
+    }
+  }catch(e){
+    box.innerHTML=`<span style="color:var(--red)">Request failed.</span>`;
+    toast('Request failed','err');
+  }
+  btn.disabled=false;
+  btn.innerHTML='<span>⚡</span> Generate Text';
+}
+
+function escHtml(t){
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function copyOutput(){
+  const box=document.getElementById('outputBox');
+  navigator.clipboard.writeText(box.innerText).then(()=>toast('Copied! 📋'));
+}
+
+// ── POLL STATUS ON LOAD ──
+(async()=>{
+  const r=await fetch('/api/status');
+  const d=await r.json();
+  updateUI(d);
+  if(d.status==='training'||d.status==='loading') startStream();
+})();
+</script>
+</body>
+</html>
